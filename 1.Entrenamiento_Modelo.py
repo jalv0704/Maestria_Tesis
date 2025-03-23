@@ -17,6 +17,13 @@ print(f"Usando dispositivo: {device}")
 def load_data(file_path):
     df = pd.read_excel(file_path)
     
+    # Mapeo de calificaciones textuales a numéricas
+    mapeo_calificaciones = {
+        "MALA": 0,
+        "REGULAR": 1,
+        "BUENA": 2
+    }
+    
     # Extraer texto de la conversación
     def extract_text(conv):
         try:
@@ -27,9 +34,18 @@ def load_data(file_path):
             return ""
     
     df["Texto"] = df["Conversacion"].apply(extract_text)
+    
+    # Limpiar y convertir calificaciones
+    df["CALIFICACIÓN"] = df["CALIFICACIÓN"].str.strip().str.upper()
+    df["CALIFICACIÓN"] = df["CALIFICACIÓN"].map(mapeo_calificaciones)
+    
+    # Eliminar filas con calificaciones no reconocidas
+    df = df.dropna(subset=["CALIFICACIÓN"])
+    df["CALIFICACIÓN"] = df["CALIFICACIÓN"].astype(int)
+    
     return df[["Texto", "CALIFICACIÓN"]]
 
-# Dataset personalizado para PyTorch
+# Dataset personalizado para PyTorch (sin cambios en la clase)
 class ConversationDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=512):
         self.encodings = tokenizer(texts, truncation=True, padding=True, max_length=max_length)
@@ -68,7 +84,7 @@ training_args = TrainingArguments(
     evaluation_strategy="epoch",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
-    num_train_epochs=3,
+    num_train_epochs=20,
     weight_decay=0.01,
 )
 
@@ -87,3 +103,65 @@ model.save_pretrained("./bert_calificacion_model")
 tokenizer.save_pretrained("./bert_calificacion_model")
 
 print("Entrenamiento completado y modelo guardado.")
+
+
+
+import torch
+print(torch.cuda.is_available())  # Debe ser True
+print(torch.cuda.get_device_name(0))  # Debe mostrar el modelo de la GPU
+
+import torch
+print(torch.cuda.is_available())  # Debe ser True
+print(torch.cuda.get_device_name(0))  # Debe mostrar el modelo de la GPU
+
+
+
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+import numpy as np
+
+# Función para evaluar el modelo
+def evaluate_model(trainer, test_dataset):
+    predictions = trainer.predict(test_dataset)
+    preds = np.argmax(predictions.predictions, axis=1)  # Convertir logits a clases
+    labels = predictions.label_ids
+
+    # Calcular métricas
+    accuracy = accuracy_score(labels, preds)
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="weighted")
+
+    print(f"Accuracy: {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall: {recall:.4f}")
+    print(f"F1-score: {f1:.4f}")
+
+# Evaluar modelo después del entrenamiento
+evaluate_model(trainer, test_dataset)
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+# Función para mostrar la matriz de confusión con etiquetas
+def plot_confusion_matrix(labels, preds, class_names):
+    cm = confusion_matrix(labels, preds)
+    
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
+                xticklabels=class_names, 
+                yticklabels=class_names)
+    
+    plt.xlabel("Predicciones")
+    plt.ylabel("Verdaderas Etiquetas")
+    plt.title("Matriz de Confusión - Calificaciones de Conversaciones")
+    plt.show()
+
+# Obtener predicciones del modelo
+predictions = trainer.predict(test_dataset)
+preds = np.argmax(predictions.predictions, axis=1)
+labels = predictions.label_ids
+
+# Generar la matriz con nombres de clases
+plot_confusion_matrix(labels, preds, class_names=["MALA", "REGULAR", "BUENA"])
+
